@@ -7701,7 +7701,7 @@ Shaken não aparece no alerta:
         cliente_id = row[0]
         # Atualiza o combo de clientes e seleciona o vinculado
         self._atualizar_combo_clientes_servico()
-        for opt in self._serv_cliente_combo["values"]:
+        for opt in getattr(self, "_serv_cli_opts_all", []):
             if opt.startswith(f"{cliente_id} —"):
                 self._serv_cliente_var.set(opt)
                 return
@@ -8207,8 +8207,23 @@ Shaken não aparece no alerta:
     # ── Dashboard: Visão Geral ────────────────────────────────────────────────
     def _build_dash_visao_geral(self, parent):
         import datetime, calendar
-        root = tk.Frame(parent, bg=COLORS["bg_content"])
-        root.pack(fill="both", expand=True, padx=18, pady=18)
+        # ── Scroll wrapper ─────────────────────────────────────────────────
+        _vg_outer = tk.Frame(parent, bg=COLORS["bg_content"])
+        _vg_outer.pack(fill="both", expand=True)
+        _vg_cv = tk.Canvas(_vg_outer, bg=COLORS["bg_content"], highlightthickness=0)
+        _vg_sb = tk.Scrollbar(_vg_outer, orient="vertical", command=_vg_cv.yview)
+        root = tk.Frame(_vg_cv, bg=COLORS["bg_content"])
+        root.bind("<Configure>", lambda e: _vg_cv.configure(scrollregion=_vg_cv.bbox("all")))
+        _vg_win = _vg_cv.create_window((0,0), window=root, anchor="nw")
+        _vg_cv.configure(yscrollcommand=_vg_sb.set)
+        _vg_cv.bind("<Configure>", lambda e: _vg_cv.itemconfig(_vg_win, width=e.width))
+        _vg_cv.pack(side="left", fill="both", expand=True)
+        _vg_sb.pack(side="right", fill="y")
+        _vg_outer.bind("<Enter>", lambda e: _vg_outer.bind_all("<MouseWheel>",
+            lambda ev: _vg_cv.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        _vg_outer.bind("<Leave>", lambda e: _vg_outer.unbind_all("<MouseWheel>"))
+        # internal padding
+        root.configure(padx=18, pady=18)
 
         tk.Label(root, text="⊞  Visão Geral", font=("Helvetica", 14, "bold"),
                  bg=COLORS["bg_content"], fg=COLORS["text_primary"]).pack(anchor="w", pady=(0,14))
@@ -9367,9 +9382,21 @@ Shaken não aparece no alerta:
         cv_s.pack(side="left", fill="both", expand=True)
         sb_s.pack(side="right", fill="y")
 
-        # ── Coluna direita: KPI + gráfico ──────────────────────────────────────
-        right = tk.Frame(top, bg=COLORS["bg_content"])
-        right.pack(side="right", fill="both", expand=True)
+        # ── Coluna direita: KPI + gráfico (scrollável) ──────────────────────
+        right_outer = tk.Frame(top, bg=COLORS["bg_content"])
+        right_outer.pack(side="right", fill="both", expand=True)
+        right_cv = tk.Canvas(right_outer, bg=COLORS["bg_content"], highlightthickness=0)
+        right_sb = tk.Scrollbar(right_outer, orient="vertical", command=right_cv.yview)
+        right = tk.Frame(right_cv, bg=COLORS["bg_content"])
+        right.bind("<Configure>", lambda e: right_cv.configure(scrollregion=right_cv.bbox("all")))
+        _rwin = right_cv.create_window((0,0), window=right, anchor="nw")
+        right_cv.configure(yscrollcommand=right_sb.set)
+        right_cv.bind("<Configure>", lambda e: right_cv.itemconfig(_rwin, width=e.width))
+        right_cv.pack(side="left", fill="both", expand=True)
+        right_sb.pack(side="right", fill="y")
+        right_outer.bind("<Enter>", lambda e: right_outer.bind_all("<MouseWheel>",
+            lambda ev: right_cv.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        right_outer.bind("<Leave>", lambda e: right_outer.unbind_all("<MouseWheel>"))
 
         # KPI mês atual
         hoje = datetime.date.today()
@@ -10378,12 +10405,10 @@ Shaken não aparece no alerta:
         tab_bar = tk.Frame(root, bg=COLORS["bg_content"])
         tab_bar.pack(fill="x", pady=(0, 0))
 
-        content_area = tk.Frame(root, bg=COLORS["bg_content"])
-        content_area.pack(fill="both", expand=True)
-
-        # Frames das abas
-        frame_receita = tk.Frame(content_area, bg=COLORS["bg_content"])
-        frame_lucro   = tk.Frame(content_area, bg=COLORS["bg_content"])
+        # Frames das abas — direto no root (sem wrapper de canvas)
+        # O scroll das sidebars é feito dentro de cada frame_receita/lucro
+        frame_receita = tk.Frame(root, bg=COLORS["bg_content"])
+        frame_lucro   = tk.Frame(root, bg=COLORS["bg_content"])
 
         self._ind_tab_frames    = {"receita": frame_receita, "lucro": frame_lucro}
         self._ind_tab_active    = tk.StringVar(value="receita")
@@ -10394,6 +10419,7 @@ Shaken não aparece no alerta:
             for k, f in self._ind_tab_frames.items():
                 if k == name:
                     f.pack(fill="both", expand=True)
+                    f.update_idletasks()
                 else:
                     f.pack_forget()
             titles = {"receita": "◈  Indicadores — Receita do Mês",
@@ -10430,11 +10456,23 @@ Shaken não aparece no alerta:
                                           bg=COLORS["bg_card"], fg=COLORS["text_primary"])
         self._ind_pizza_title.pack(pady=(10,4))
         self._ind_cv_pizza = tk.Canvas(pizza_card, bg=COLORS["bg_card"],
-                                        highlightthickness=0, width=280, height=280)
-        self._ind_cv_pizza.pack(pady=6)
+                                        highlightthickness=0)
+        self._ind_cv_pizza.pack(fill="both", expand=True, padx=8, pady=8)
 
-        legend_outer = tk.Frame(frame_receita, bg=COLORS["bg_content"])
-        legend_outer.pack(side="right", fill="both", expand=True, pady=8)
+        _leg_outer = tk.Frame(frame_receita, bg=COLORS["bg_content"])
+        _leg_outer.pack(side="right", fill="both", expand=True, pady=8)
+        _leg_cv = tk.Canvas(_leg_outer, bg=COLORS["bg_content"], highlightthickness=0)
+        _leg_sb = tk.Scrollbar(_leg_outer, orient="vertical", command=_leg_cv.yview)
+        legend_outer = tk.Frame(_leg_cv, bg=COLORS["bg_content"])
+        legend_outer.bind("<Configure>", lambda e: _leg_cv.configure(scrollregion=_leg_cv.bbox("all")))
+        _leg_win = _leg_cv.create_window((0,0), window=legend_outer, anchor="nw")
+        _leg_cv.configure(yscrollcommand=_leg_sb.set)
+        _leg_cv.bind("<Configure>", lambda e: _leg_cv.itemconfig(_leg_win, width=e.width))
+        _leg_cv.pack(side="left", fill="both", expand=True)
+        _leg_sb.pack(side="right", fill="y")
+        _leg_outer.bind("<Enter>", lambda e: _leg_outer.bind_all("<MouseWheel>",
+            lambda ev: _leg_cv.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        _leg_outer.bind("<Leave>", lambda e: _leg_outer.unbind_all("<MouseWheel>"))
         self._ind_legend_frame = legend_outer
 
         TIPOS_REC = [
@@ -10458,11 +10496,23 @@ Shaken não aparece no alerta:
                  font=("Helvetica",10,"bold"),
                  bg=COLORS["bg_card"], fg=COLORS["text_primary"]).pack(pady=(10,4))
         self._ind_cv_lucro = tk.Canvas(lp_card, bg=COLORS["bg_card"],
-                                        highlightthickness=0, width=280, height=280)
-        self._ind_cv_lucro.pack(pady=6)
+                                        highlightthickness=0)
+        self._ind_cv_lucro.pack(fill="both", expand=True, padx=8, pady=8)
 
-        lucro_legend_outer = tk.Frame(frame_lucro, bg=COLORS["bg_content"])
-        lucro_legend_outer.pack(side="right", fill="both", expand=True, pady=8)
+        _lleg_outer = tk.Frame(frame_lucro, bg=COLORS["bg_content"])
+        _lleg_outer.pack(side="right", fill="both", expand=True, pady=8)
+        _lleg_cv = tk.Canvas(_lleg_outer, bg=COLORS["bg_content"], highlightthickness=0)
+        _lleg_sb = tk.Scrollbar(_lleg_outer, orient="vertical", command=_lleg_cv.yview)
+        lucro_legend_outer = tk.Frame(_lleg_cv, bg=COLORS["bg_content"])
+        lucro_legend_outer.bind("<Configure>", lambda e: _lleg_cv.configure(scrollregion=_lleg_cv.bbox("all")))
+        _lleg_win = _lleg_cv.create_window((0,0), window=lucro_legend_outer, anchor="nw")
+        _lleg_cv.configure(yscrollcommand=_lleg_sb.set)
+        _lleg_cv.bind("<Configure>", lambda e: _lleg_cv.itemconfig(_lleg_win, width=e.width))
+        _lleg_cv.pack(side="left", fill="both", expand=True)
+        _lleg_sb.pack(side="right", fill="y")
+        _lleg_outer.bind("<Enter>", lambda e: _lleg_outer.bind_all("<MouseWheel>",
+            lambda ev: _lleg_cv.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        _lleg_outer.bind("<Leave>", lambda e: _lleg_outer.unbind_all("<MouseWheel>"))
         self._ind_lucro_legend_frame = lucro_legend_outer
 
         TIPOS_LUC = [
@@ -10530,17 +10580,24 @@ Shaken não aparece no alerta:
             total_div   = total_geral or 1
 
             cv = self._ind_cv_pizza
+            cv.update_idletasks()
+            W = cv.winfo_width()
+            H = cv.winfo_height()
+            if W < 30 or H < 30:
+                root.after(100, _refresh_indicadores)
+                return
             cv.delete("all")
-            W = cv.winfo_width() or 280
-            H = cv.winfo_height() or 280
             cx, cy = W//2, H//2
-            R = min(W, H)//2 - 18
+            # Reduz o raio para telas menores (notebooks HD)
+            R = int(min(W, H) * 0.38)
             start = 90.0   # começa no topo (tkinter: 90° = topo, cresce anti-horário)
             for tipo, cor in TIPOS_REC:
                 val = valores[tipo]
                 if val <= 0: continue
                 pct    = val / total_div
                 extent = pct * 360.0
+                if extent >= 360:
+                    extent = 359.999
                 # tkinter arc: start em graus, extent positivo = anti-horário
                 cv.create_arc(cx-R, cy-R, cx+R, cy+R,
                               start=start, extent=extent,
@@ -10745,11 +10802,16 @@ Shaken não aparece no alerta:
 
             # Pizza lucro
             cv2 = self._ind_cv_lucro
+            cv2.update_idletasks()
+            W2 = cv2.winfo_width()
+            H2 = cv2.winfo_height()
+            if W2 < 30 or H2 < 30:
+                root.after(100, _refresh_lucro_ind)
+                return
             cv2.delete("all")
-            W2 = cv2.winfo_width() or 280
-            H2 = cv2.winfo_height() or 280
             cx2, cy2 = W2//2, H2//2
-            R2 = min(W2, H2)//2 - 18
+            # Reduz o raio para telas menores (notebooks HD)
+            R2 = int(min(W2, H2) * 0.38)
 
             # Só fatias positivas para a pizza
             pos_total = sum(v for v in valores_luc.values() if v > 0) or 1
@@ -10764,6 +10826,8 @@ Shaken não aparece no alerta:
                     if val <= 0: continue
                     pct2    = val / pos_total
                     extent2 = pct2 * 360.0
+                    if extent2 >= 360:
+                        extent2 = 359.999
                     cv2.create_arc(cx2-R2, cy2-R2, cx2+R2, cy2+R2,
                                    start=start2, extent=extent2,
                                    fill=cor, outline=COLORS["bg_card"], width=2)
@@ -10887,19 +10951,22 @@ Shaken não aparece no alerta:
             else:
                 _refresh_lucro_ind()
 
-        # Bind canvas resizes (guarded)
+        # Bind canvas resizes — fires with real dimensions when canvas renders
+        _pizza_ready = [False]
         def _on_pizza_cfg(e):
-            if self._ind_tab_active.get() == "receita" and e.width > 10:
-                root.after_idle(_refresh_indicadores)
+            if e.width > 30:
+                _pizza_ready[0] = True
+                if self._ind_tab_active.get() == "receita":
+                    root.after_idle(_refresh_indicadores)
         def _on_lucro_cfg(e):
-            if self._ind_tab_active.get() == "lucro" and e.width > 10:
+            if e.width > 30 and self._ind_tab_active.get() == "lucro":
                 root.after_idle(_refresh_lucro_ind)
         self._ind_cv_pizza.bind("<Configure>", _on_pizza_cfg)
         self._ind_cv_lucro.bind("<Configure>", _on_lucro_cfg)
 
         # Inicializa
         switch_tab("receita")
-        root.after(400, _refresh_indicadores)
+        root.after(300, _refresh_indicadores)
 
 
 
@@ -14094,6 +14161,379 @@ Shaken não aparece no alerta:
                      fg=saldo_fg, width=11, anchor="w").pack(side="left",padx=2)
             tk.Label(row, text=st_txt, font=("Helvetica",7,"bold"),
                      bg=st_bg, fg="white", width=9, anchor="center").pack(side="left",padx=2,pady=3)
+            tk.Button(row, text="H", font=("Helvetica",7,"bold"),
+                      bg="#1E3A5F", fg="white", relief="flat", cursor="hand2",
+                      padx=5, pady=1,
+                      command=lambda vid=d["id"]: self._historico_divida_popup(vid)
+                      ).pack(side="left", padx=(4,2), pady=3)
+
+
+    def _historico_divida_popup(self, venda_id):
+        """Abre popup com histórico completo do cliente da venda."""
+        import datetime as _dt
+
+        v = next((x for x in [dict(r) for r in self.conn.execute(
+            "SELECT v.*, c.nome as cli_nome, c.telefone as cli_tel "
+            "FROM vendas v LEFT JOIN clientes c ON v.cliente_id=c.id "
+            "WHERE v.id=?", (venda_id,)).fetchall()]), None)
+        if not v:
+            return
+
+        pagamentos = [dict(r) for r in self.conn.execute(
+            "SELECT * FROM pagamentos WHERE venda_id=? ORDER BY data_pagamento",
+            (venda_id,)).fetchall()]
+
+        try:
+            total_pago = sum(int(str(p.get("valor_pago") or 0).replace(",","")) for p in pagamentos)
+            vv  = int(str(v.get("valor_venda") or 0).replace(",",""))
+            et  = int(str(v.get("entrada") or 0).replace(",",""))
+            vtr = int(str(v.get("valor_troca") or 0).replace(",",""))
+            saldo = max(0, vv - et - vtr - total_pago)
+        except Exception:
+            total_pago = saldo = 0
+
+        # ── Popup ──────────────────────────────────────────────────────────
+        pop = tk.Toplevel(self)
+        pop.title(f"Histórico — {v.get('cli_nome','—')} | {v.get('carro','—')}")
+        pop.configure(bg=COLORS["bg_card"])
+        pop.geometry("680x560")
+        pop.minsize(500, 400)
+        pop.grab_set()
+
+        tk.Frame(pop, bg=COLORS["blue"], height=4).pack(fill="x")
+        tk.Label(pop, text=f"📋  Histórico do Cliente — {v.get('cli_nome','—')}",
+                 font=("Helvetica",12,"bold"),
+                 bg=COLORS["bg_card"], fg=COLORS["text_primary"]
+                 ).pack(anchor="w", padx=18, pady=(12,4))
+        tk.Frame(pop, bg=COLORS["border"], height=1).pack(fill="x", padx=18)
+
+        # scrollable content
+        outer = tk.Frame(pop, bg=COLORS["bg_card"])
+        outer.pack(fill="both", expand=True, padx=0, pady=0)
+        cv_p = tk.Canvas(outer, bg=COLORS["bg_card"], highlightthickness=0)
+        sb_p = tk.Scrollbar(outer, orient="vertical", command=cv_p.yview)
+        inner = tk.Frame(cv_p, bg=COLORS["bg_card"])
+        inner.bind("<Configure>", lambda e: cv_p.configure(scrollregion=cv_p.bbox("all")))
+        _pw = cv_p.create_window((0,0), window=inner, anchor="nw")
+        cv_p.configure(yscrollcommand=sb_p.set)
+        cv_p.bind("<Configure>", lambda e: cv_p.itemconfig(_pw, width=e.width))
+        cv_p.pack(side="left", fill="both", expand=True)
+        sb_p.pack(side="right", fill="y")
+        pop.bind("<Enter>", lambda e: pop.bind_all("<MouseWheel>",
+            lambda ev: cv_p.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        pop.bind("<Leave>", lambda e: pop.unbind_all("<MouseWheel>"))
+
+        def section(txt, cor=COLORS["blue"]):
+            f = tk.Frame(inner, bg=cor)
+            f.pack(fill="x", padx=18, pady=(12,2))
+            tk.Label(f, text=txt, font=("Helvetica",9,"bold"),
+                     bg=cor, fg="white", padx=8, pady=4).pack(anchor="w")
+
+        def row2(lbl, val, fg=None):
+            f = tk.Frame(inner, bg=COLORS["bg_card"])
+            f.pack(fill="x", padx=24, pady=1)
+            tk.Label(f, text=lbl, font=("Helvetica",8,"bold"), width=18, anchor="w",
+                     bg=COLORS["bg_card"], fg=COLORS["text_secondary"]).pack(side="left")
+            tk.Label(f, text=str(val), font=("Helvetica",9),
+                     bg=COLORS["bg_card"],
+                     fg=fg or COLORS["text_primary"]).pack(side="left")
+
+        # ── Dados do cliente ──
+        section("👤  Cliente")
+        row2("Nome",     v.get("cli_nome") or "—")
+        row2("Telefone", v.get("cli_tel")  or "—")
+
+        # ── Dados do carro ──
+        section("🚗  Veículo")
+        row2("Carro",  v.get("carro") or "—")
+        row2("Placa",  v.get("placa") or "—")
+        row2("Cor",    v.get("cor")   or "—")
+        row2("Chassi", v.get("chassi") or "—")
+
+        # ── Informações da venda ──
+        section("💰  Venda")
+        row2("Venda #",        f"#{v.get('id','—')}")
+        row2("Data Venda",     v.get("data_venda") or "—")
+        row2("Tipo",           v.get("tipo_venda") or "—")
+        row2("Valor Total",    f"¥ {vv:,}", COLORS["green"])
+        row2("Entrada",        f"¥ {et:,}",  COLORS["blue"])
+        if vtr:
+            row2("Troca",      f"¥ {vtr:,}", COLORS["orange"])
+        row2("Parcela Mensal", f"¥ {int(str(v.get('parcela_mensal') or 0).replace(',','')):,}" if v.get("parcela_mensal") else "—")
+        row2("Nº Parcelas",    v.get("num_parcelas") or "—")
+        row2("1ª Parcela",     v.get("data_primeira_parc") or "—")
+        row2("Total Pago",     f"¥ {total_pago:,}", COLORS["blue"])
+        row2("Saldo Devedor",  f"¥ {saldo:,}", COLORS["red"] if saldo > 0 else COLORS["green"])
+
+        # ── Histórico de pagamentos ──
+        section("📅  Histórico de Pagamentos", COLORS["orange"])
+        if pagamentos:
+            hdr_f = tk.Frame(inner, bg=COLORS["bg_main"])
+            hdr_f.pack(fill="x", padx=18, pady=(4,0))
+            for txt, w in [("#", 4),("Data", 14),("Valor Pago", 14),("Obs", 20)]:
+                tk.Label(hdr_f, text=txt, font=("Helvetica",8,"bold"),
+                         bg=COLORS["bg_main"], fg=COLORS["text_muted"],
+                         width=w, anchor="w").pack(side="left", padx=2, pady=4)
+            for i, p in enumerate(pagamentos):
+                rb = COLORS["bg_card"] if i%2==0 else COLORS["bg_content"]
+                rf = tk.Frame(inner, bg=rb)
+                rf.pack(fill="x", padx=18)
+                vp = int(str(p.get("valor_pago") or 0).replace(",",""))
+                for txt, w, fg in [
+                    (str(p.get("num_parcela","—")), 4, COLORS["text_muted"]),
+                    (p.get("data_pagamento","—"),   14, COLORS["text_secondary"]),
+                    (f"¥ {vp:,}",                  14, COLORS["blue"]),
+                    ((p.get("obs") or "—")[:24],   20, COLORS["text_muted"]),
+                ]:
+                    tk.Label(rf, text=txt, font=("Helvetica",8),
+                             bg=rb, fg=fg, width=w, anchor="w"
+                             ).pack(side="left", padx=2, pady=5)
+        else:
+            tk.Label(inner, text="Nenhum pagamento registrado.",
+                     font=("Helvetica",9), bg=COLORS["bg_card"],
+                     fg=COLORS["text_muted"]).pack(padx=24, pady=8)
+
+        # ── Parcelas em aberto ──
+        section("⏳  Parcelas em Aberto", "#7F1D1D")
+        parcela_mensal = int(str(v.get("parcela_mensal") or 0).replace(",",""))
+        _ult_raw = v.get("valor_ultima_parc")
+        try:
+            _ult_int = int(str(_ult_raw).replace(",","")) if _ult_raw not in (None, "", 0, "0") else 0
+        except Exception:
+            _ult_int = 0
+        valor_ultima = _ult_int if _ult_int > 0 else parcela_mensal
+        num_p   = v.get("num_parcelas") or 0
+        pagas_n = v.get("parcelas_pagas") or 0
+        d1      = v.get("data_primeira_parc") or ""
+        if parcela_mensal and num_p and d1:
+            aberto_count = 0
+            for n in range(pagas_n, num_p):
+                data_p = self._proxima_parcela(d1, n)
+                if data_p == "—": continue
+                val_parc = valor_ultima if n == num_p - 1 else parcela_mensal
+                rf_bg = COLORS["bg_card"] if aberto_count%2==0 else COLORS["bg_content"]
+                rf = tk.Frame(inner, bg=rf_bg)
+                rf.pack(fill="x", padx=18)
+                tk.Label(rf, text=f"Parcela {n+1:02d}", font=("Helvetica",8,"bold"),
+                         bg=rf_bg, fg=COLORS["red"], width=10, anchor="w"
+                         ).pack(side="left", padx=2, pady=5)
+                tk.Label(rf, text=data_p, font=("Helvetica",8),
+                         bg=rf_bg, fg=COLORS["text_muted"], width=14, anchor="w"
+                         ).pack(side="left", padx=2)
+                tk.Label(rf, text=f"¥ {val_parc:,}", font=("Helvetica",8,"bold"),
+                         bg=rf_bg, fg=COLORS["orange"], width=12, anchor="w"
+                         ).pack(side="left", padx=2)
+                aberto_count += 1
+            if aberto_count == 0:
+                tk.Label(inner, text="✓  Todas as parcelas quitadas.",
+                         font=("Helvetica",9), bg=COLORS["bg_card"],
+                         fg=COLORS["green"]).pack(padx=24, pady=8)
+        else:
+            tk.Label(inner, text="Sem dados de parcelamento.",
+                     font=("Helvetica",9), bg=COLORS["bg_card"],
+                     fg=COLORS["text_muted"]).pack(padx=24, pady=8)
+
+        tk.Frame(inner, bg=COLORS["bg_card"], height=16).pack()
+
+        # ── Botões rodapé ──
+        foot = tk.Frame(pop, bg=COLORS["bg_card"])
+        foot.pack(fill="x", padx=18, pady=(4,12))
+        tk.Button(foot, text="📄  Exportar PDF", font=("Helvetica",9,"bold"),
+                  bg=COLORS["accent"], fg="white", relief="flat", cursor="hand2",
+                  padx=10, pady=4,
+                  command=lambda: self._pdf_historico_divida(v, pagamentos, total_pago, saldo)
+                  ).pack(side="left")
+        tk.Button(foot, text="Fechar", font=("Helvetica",9),
+                  bg=COLORS["border"], fg=COLORS["text_secondary"],
+                  relief="flat", cursor="hand2",
+                  command=pop.destroy).pack(side="right", ipady=4, ipadx=6)
+
+    def _pdf_historico_divida(self, v, pagamentos, total_pago, saldo):
+        """Gera PDF do histórico de dívida de um cliente."""
+        from tkinter import filedialog, messagebox as _mb
+        import datetime as _dt
+        try:
+            from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
+                                            TableStyle, HRFlowable)
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors as rlc
+            from reportlab.lib.units import cm
+        except ImportError:
+            _mb.showwarning("ReportLab", "ReportLab não instalado. Instale com: pip install reportlab")
+            return
+
+        hoje = _dt.date.today().strftime("%d/%m/%Y")
+        fname = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF","*.pdf")],
+            initialfile=f"historico_{v.get('cli_nome','cliente').replace(' ','_')}.pdf")
+        if not fname: return
+
+        doc = SimpleDocTemplate(fname, pagesize=A4,
+                                leftMargin=2*cm, rightMargin=2*cm,
+                                topMargin=2*cm, bottomMargin=2*cm)
+        styles = getSampleStyleSheet()
+        title_s  = ParagraphStyle("T", parent=styles["Title"],  fontSize=14, spaceAfter=6)
+        head_s   = ParagraphStyle("H", parent=styles["Heading2"],fontSize=11, spaceAfter=4, textColor=rlc.HexColor("#1E3A5F"))
+        body_s   = styles["Normal"]
+        muted_s  = ParagraphStyle("M", parent=styles["Normal"], fontSize=8, textColor=rlc.grey)
+
+        story = []
+        story.append(Paragraph(f"Histórico do Cliente — {v.get('cli_nome','—')}", title_s))
+        story.append(Paragraph(f"Gerado em {hoje}", muted_s))
+        story.append(HRFlowable(width="100%", thickness=1, color=rlc.HexColor("#E2E8F0")))
+        story.append(Spacer(1, 0.3*cm))
+
+        # Cliente
+        story.append(Paragraph("Dados do Cliente", head_s))
+        story.append(Table(
+            [["Nome", v.get("cli_nome","—")], ["Telefone", v.get("cli_tel","—")]],
+            colWidths=[4*cm, 13*cm],
+            style=TableStyle([
+                ("FONTSIZE", (0,0),(-1,-1), 9),
+                ("TEXTCOLOR",(0,0),(0,-1), rlc.HexColor("#64748B")),
+                ("FONTNAME", (0,0),(0,-1),"Helvetica-Bold"),
+                ("GRID",(0,0),(-1,-1),0.5,rlc.HexColor("#E2E8F0")),
+                ("BACKGROUND",(0,0),(-1,-1),rlc.white),
+                ("ROWBACKGROUNDS",(0,0),(-1,-1),[rlc.white, rlc.HexColor("#F8FAFC")]),
+            ])))
+        story.append(Spacer(1, 0.4*cm))
+
+        # Veículo
+        story.append(Paragraph("Dados do Veículo", head_s))
+        story.append(Table(
+            [["Carro", v.get("carro","—")], ["Placa", v.get("placa","—")],
+             ["Cor",   v.get("cor","—")],   ["Chassi", v.get("chassi","—")]],
+            colWidths=[4*cm, 13*cm],
+            style=TableStyle([
+                ("FONTSIZE",(0,0),(-1,-1),9),
+                ("TEXTCOLOR",(0,0),(0,-1),rlc.HexColor("#64748B")),
+                ("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),
+                ("GRID",(0,0),(-1,-1),0.5,rlc.HexColor("#E2E8F0")),
+                ("ROWBACKGROUNDS",(0,0),(-1,-1),[rlc.white, rlc.HexColor("#F8FAFC")]),
+            ])))
+        story.append(Spacer(1, 0.4*cm))
+
+        # Venda
+        vv  = int(str(v.get("valor_venda") or 0).replace(",",""))
+        et  = int(str(v.get("entrada") or 0).replace(",",""))
+        vtr = int(str(v.get("valor_troca") or 0).replace(",",""))
+        story.append(Paragraph("Informações da Venda", head_s))
+        venda_rows = [
+            ["Venda #",       f"#{v.get('id','—')}"],
+            ["Data",          v.get("data_venda") or "—"],
+            ["Tipo",          v.get("tipo_venda") or "—"],
+            ["Valor Total",   f"¥ {vv:,}"],
+            ["Entrada",       f"¥ {et:,}"],
+            ["Total Pago",    f"¥ {total_pago:,}"],
+            ["Saldo Devedor", f"¥ {saldo:,}"],
+        ]
+        story.append(Table(venda_rows, colWidths=[4*cm, 13*cm],
+            style=TableStyle([
+                ("FONTSIZE",(0,0),(-1,-1),9),
+                ("TEXTCOLOR",(0,0),(0,-1),rlc.HexColor("#64748B")),
+                ("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),
+                ("GRID",(0,0),(-1,-1),0.5,rlc.HexColor("#E2E8F0")),
+                ("ROWBACKGROUNDS",(0,0),(-1,-1),[rlc.white, rlc.HexColor("#F8FAFC")]),
+                ("TEXTCOLOR",(-1,-1),(-1,-1), rlc.HexColor("#DC2626")),
+                ("FONTNAME",(-1,-1),(-1,-1),"Helvetica-Bold"),
+            ])))
+        story.append(Spacer(1, 0.4*cm))
+
+        # Pagamentos
+        story.append(Paragraph("Histórico de Pagamentos", head_s))
+        if pagamentos:
+            pag_rows = [["#", "Data", "Valor Pago"]]
+            for p in pagamentos:
+                vp = int(str(p.get("valor_pago") or 0).replace(",",""))
+                pag_rows.append([str(p.get("num_parcela","—")),
+                                 p.get("data_pagamento","—"),
+                                 f"¥ {vp:,}"])
+            story.append(Table(pag_rows, colWidths=[2*cm, 5*cm, 10*cm],
+                style=TableStyle([
+                    ("FONTSIZE",(0,0),(-1,-1),9),
+                    ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+                    ("BACKGROUND",(0,0),(-1,0),rlc.HexColor("#1E3A5F")),
+                    ("TEXTCOLOR",(0,0),(-1,0),rlc.white),
+                    ("GRID",(0,0),(-1,-1),0.5,rlc.HexColor("#E2E8F0")),
+                    ("ROWBACKGROUNDS",(0,1),(-1,-1),[rlc.white, rlc.HexColor("#F8FAFC")]),
+                    ("TEXTCOLOR",(2,1),(-1,-1),rlc.HexColor("#1D4ED8")),
+                ])))
+        else:
+            story.append(Paragraph("Nenhum pagamento registrado.", body_s))
+
+
+        # ── Parcelas em aberto ──
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph("Parcelas em Aberto", head_s))
+        def _si(val, fb=0):
+            try: return max(0, int(str(val or 0).replace(",","").replace("¥","")))
+            except: return fb
+        parcela_mensal_v = _si(v.get("parcela_mensal"))
+        num_p_v  = v.get("num_parcelas") or 0
+        d1_v     = v.get("data_primeira_parc") or ""
+        import datetime as _dt2
+        pagas_n_v   = v.get("parcelas_pagas") or 0
+        _ult_rv     = v.get("valor_ultima_parc")
+        valor_ult_v = _si(_ult_rv) if (_ult_rv not in (None, "", "0", 0)) else parcela_mensal_v
+        if valor_ult_v <= 0: valor_ult_v = parcela_mensal_v
+        if parcela_mensal_v and num_p_v and d1_v:
+            abertas = []
+            for n in range(pagas_n_v, num_p_v):
+                data_n = self._proxima_parcela(d1_v, n)
+                if data_n == "—": continue
+                val_n = valor_ult_v if n == num_p_v - 1 else parcela_mensal_v
+                if val_n <= 0: val_n = parcela_mensal_v
+                abertas.append((n+1, data_n, val_n))
+            if abertas:
+                ultima_num, ultima_data, ultima_val = abertas[-1]
+                summ_rows = [
+                    ["Parcelas em aberto", str(len(abertas))],
+                    ["Valor da última parcela", f"¥ {ultima_val:,}"],
+                    ["Data da última parcela",  ultima_data],
+                ]
+                story.append(Table(summ_rows, colWidths=[7*cm, 10*cm],
+                    style=TableStyle([
+                        ("FONTSIZE",(0,0),(-1,-1),9),
+                        ("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),
+                        ("TEXTCOLOR",(0,0),(0,-1),rlc.HexColor("#64748B")),
+                        ("GRID",(0,0),(-1,-1),0.5,rlc.HexColor("#E2E8F0")),
+                        ("ROWBACKGROUNDS",(0,0),(-1,-1),[rlc.white, rlc.HexColor("#FEF2F2")]),
+                        ("TEXTCOLOR",(1,0),(1,0), rlc.HexColor("#DC2626")),
+                        ("FONTNAME",(1,0),(1,0),"Helvetica-Bold"),
+                    ])))
+
+                abert_rows = [["Parcela", "Data Vencimento", "Valor"]]
+                for num, data, val in abertas:
+                    abert_rows.append([str(num), data, f"¥ {val:,}"])
+                story.append(Spacer(1, 0.2*cm))
+                story.append(Table(abert_rows, colWidths=[3*cm, 6*cm, 8*cm],
+                    style=TableStyle([
+                        ("FONTSIZE",(0,0),(-1,-1),8),
+                        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+                        ("BACKGROUND",(0,0),(-1,0),rlc.HexColor("#7F1D1D")),
+                        ("TEXTCOLOR",(0,0),(-1,0),rlc.white),
+                        ("GRID",(0,0),(-1,-1),0.5,rlc.HexColor("#E2E8F0")),
+                        ("ROWBACKGROUNDS",(0,1),(-1,-1),[rlc.white, rlc.HexColor("#FEF2F2")]),
+                        ("TEXTCOLOR",(2,1),(-1,-1),rlc.HexColor("#DC2626")),
+                    ])))
+            else:
+                story.append(Paragraph("✓  Todas as parcelas estão quitadas.", body_s))
+        else:
+            story.append(Paragraph("Sem dados de parcelamento.", body_s))
+
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(f"<font color='grey' size='7'>FTM Car System — Histórico gerado em {hoje}</font>",
+                                styles["Normal"]))
+
+        try:
+            doc.build(story)
+            from tkinter import messagebox as _mb2
+            _mb2.showinfo("PDF", f"PDF salvo em:\n{fname}")
+        except Exception as ex:
+            from tkinter import messagebox as _mb3
+            _mb3.showerror("Erro", str(ex))
 
     def _pdf_dividas_clientes(self):
         import datetime
@@ -15775,11 +16215,27 @@ Shaken não aparece no alerta:
         container = tk.Frame(parent, bg=COLORS["bg_content"])
         container.pack(fill="both", expand=True, padx=24, pady=20)
 
-        # ── FORMULÁRIO ────────────────────────────────────────────────────────
-        form_card = tk.Frame(container, bg=COLORS["bg_card"],
-                             highlightthickness=1,
-                             highlightbackground=COLORS["border"])
-        form_card.pack(side="left", fill="y", padx=(0, 16), ipadx=10)
+        # ── FORMULÁRIO (com scroll vertical) ─────────────────────────────────
+        form_outer = tk.Frame(container, bg=COLORS["bg_card"],
+                              highlightthickness=1,
+                              highlightbackground=COLORS["border"],
+                              width=310)
+        form_outer.pack(side="left", fill="y", padx=(0, 16))
+        form_outer.pack_propagate(False)
+
+        _fcanvas = tk.Canvas(form_outer, bg=COLORS["bg_card"],
+                             highlightthickness=0, width=308)
+        _fsb = tk.Scrollbar(form_outer, orient="vertical", command=_fcanvas.yview)
+        form_card = tk.Frame(_fcanvas, bg=COLORS["bg_card"])
+        form_card.bind("<Configure>",
+            lambda e: _fcanvas.configure(scrollregion=_fcanvas.bbox("all")))
+        _fcanvas.create_window((0,0), window=form_card, anchor="nw")
+        _fcanvas.configure(yscrollcommand=_fsb.set)
+        _fsb.pack(side="right", fill="y")
+        _fcanvas.pack(side="left", fill="both", expand=True)
+        form_outer.bind("<Enter>", lambda e: form_outer.bind_all("<MouseWheel>",
+            lambda ev: _fcanvas.yview_scroll(int(-1*(ev.delta/120)),"units")))
+        form_outer.bind("<Leave>", lambda e: form_outer.unbind_all("<MouseWheel>"))
 
         tk.Frame(form_card, bg=COLORS["accent"], height=4).pack(fill="x")
         tk.Label(form_card, text="◈  Cadastro de Carro",
